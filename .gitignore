@@ -1,6 +1,5 @@
 *.pyc
 *__pycache__*
-*.ckpt
 *.cpkt
 .vscode
 .idea/
@@ -11,7 +10,7 @@
 *.csv
 *.whl
 my_cache/
-result/
+
 .DS_Store
 bcco_cls/.cache/
-ckpt/
+

@@ -16,10 +16,9 @@ unset GPU_DEVICE_ORDINAL
 PYTHON=${PYTHON:-python}
 SCRIPT=${SCRIPT:-benchmark_limix_classification_amd.py}
 ROOT=${ROOT:-.}
-BENCHMARKS=${BENCHMARKS:-openml_cc18_csv=../limix/openml_cc18_csv,tabarena_cls=dataset/tabarena/cls,tabzilla_csv=../limix/tabzilla_csv,talent_csv=../limix/talent_csv}
-MODEL_PATH=${MODEL_PATH:-cache/LimiX-16M/LimiX-16M.ckpt}
-MODEL_REPO_ID=${MODEL_REPO_ID:-}
-MODEL_FILENAME=${MODEL_FILENAME:-}
+BENCHMARKS=${BENCHMARKS:-openml_cc18_csv=dataset/openml_cc18_72,tabarena_cls=dataset/tabarena/cls,tabzilla_csv=dataset/tabzilla35,talent_cls=dataset/talent_cls}
+#BENCHMARKS=${BENCHMARKS:-openml_cc18_csv=../limix/openml_cc18_csv,tabarena_cls=dataset/tabarena/cls,tabzilla_csv=../limix/tabzilla_csv,talent_csv=../limix/talent_csv}
+MODEL_PATH=${MODEL_PATH:-ckpt/LimiX-16M.ckpt}
 CONFIG_PATH=${CONFIG_PATH:-}
 OUT_DIR=${OUT_DIR:-result/LimiX_official_classification_amd}
 WORKERS=${WORKERS:-8}
@@ -44,14 +43,6 @@ CMD=(
   --test-size 0.2
   --verbose
 )
-
-if [[ -n "${MODEL_REPO_ID}" ]]; then
-  CMD+=(--model-repo-id "${MODEL_REPO_ID}")
-fi
-
-if [[ -n "${MODEL_FILENAME}" ]]; then
-  CMD+=(--model-filename "${MODEL_FILENAME}")
-fi
 
 if [[ -n "${CONFIG_PATH}" ]]; then
   CMD+=(--config-path "${CONFIG_PATH}")
