@@ -17,6 +17,7 @@ result/talent_csv/
 result/test_run/
 benchmark_list/
 dataset/
+bcco_cls/
 
 .DS_Store
 bcco_cls/.cache/
