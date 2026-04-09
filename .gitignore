@@ -1,0 +1,17 @@
+*.pyc
+*__pycache__*
+*.ckpt
+*.cpkt
+.vscode
+.idea/
+*.png
+*.jpg
+*.gml
+*.pckl
+*.csv
+*.whl
+my_cache/
+result/
+.DS_Store
+bcco_cls/.cache/
+ckpt/
