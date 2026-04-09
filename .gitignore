@@ -7,7 +7,6 @@
 *.jpg
 *.gml
 *.pckl
-*.csv
 *.whl
 my_cache/
 result/openml_cc18_csv/
