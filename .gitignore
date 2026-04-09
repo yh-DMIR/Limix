@@ -10,6 +10,14 @@
 *.csv
 *.whl
 my_cache/
+result/openml_cc18_csv/
+result/tabzilla/
+result/tabzilla27/
+result/tabzilla35/
+result/talent_csv/
+result/test_run/
+benchmark_list/
+dataset/
 
 .DS_Store
 bcco_cls/.cache/
