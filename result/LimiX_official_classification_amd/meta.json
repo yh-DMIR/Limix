@@ -1,0 +1,37 @@
+{
+  "root": "/vast/users/guangyi.chen/causal_group/zijian.li/dmir_crl/lyh/Limix",
+  "benchmarks": [
+    "openml_cc18_csv=dataset/openml_cc18_72",
+    "tabarena_cls=dataset/tabarena/cls",
+    "tabzilla_csv=dataset/tabzilla35",
+    "talent_cls=dataset/talent_cls"
+  ],
+  "model_path": "/vast/users/guangyi.chen/causal_group/zijian.li/dmir_crl/lyh/Limix/ckpt/LimiX-16M.ckpt",
+  "config_path": "/vast/users/guangyi.chen/causal_group/zijian.li/dmir_crl/lyh/Limix/config/cls_default_16M_retrieval.json",
+  "model_repo_id": null,
+  "model_filename": null,
+  "workers": 8,
+  "gpus": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "test_size": 0.2,
+  "random_state": 42,
+  "train_shard_rows": 12000,
+  "test_batch_rows": 128,
+  "min_train_shard_rows": 2000,
+  "min_test_batch_rows": 8,
+  "discovered_per_benchmark": {
+    "openml_cc18_csv": 0,
+    "tabarena_cls": 0,
+    "tabzilla_csv": 0,
+    "talent_cls": 0
+  },
+  "wall_seconds": 13.705897808074951
+}
