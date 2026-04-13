@@ -210,23 +210,19 @@ def build_tasks(
     root: Path,
     benchmark_specs: List[str],
     skip_dataset_names: set[str],
-) -> Tuple[List[DatasetTask], Dict[str, int], List[str]]:
+) -> Tuple[List[DatasetTask], Dict[str, int], List[DatasetTask]]:
     tasks: List[DatasetTask] = []
     discovered: Dict[str, int] = {}
-    skipped: List[str] = []
+    skipped: List[DatasetTask] = []
     for benchmark_name, benchmark_dir in parse_benchmark_specs(root, benchmark_specs):
         benchmark_tasks = discover_benchmark_tasks(benchmark_name, benchmark_dir) if benchmark_dir.exists() else []
         discovered[benchmark_name] = len(benchmark_tasks)
         for task in benchmark_tasks:
             if task_matches_skip(task, skip_dataset_names):
-                skipped.append(f"{task.benchmark}/{task.dataset_name}")
+                skipped.append(task)
                 continue
             tasks.append(task)
     return tasks, discovered, skipped
-
-
-def shard_items(items: List[DatasetTask], num_workers: int, worker_id: int) -> List[DatasetTask]:
-    return items[worker_id::num_workers]
 
 
 def normalize_labels(labels: pd.Series) -> pd.Series:
@@ -438,10 +434,19 @@ def resolve_model_path(
     return Path(downloaded_path).resolve()
 
 
+def init_worker_output(worker_out_csv: str) -> None:
+    columns = list(ResultRow.__annotations__.keys())
+    pd.DataFrame(columns=columns).to_csv(worker_out_csv, index=False)
+
+
+def append_worker_row(worker_out_csv: str, row: ResultRow) -> None:
+    pd.DataFrame([asdict(row)]).to_csv(worker_out_csv, mode="a", header=False, index=False)
+
+
 def run_worker(
     worker_id: int,
     gpu_id: int,
-    task_items: List[DatasetTask],
+    task_queue,
     ready_queue,
     start_event,
     worker_out_csv: str,
@@ -478,13 +483,16 @@ def run_worker(
                 "worker_id": worker_id,
                 "gpu_id": gpu_id,
                 "status": "ready",
-                "assigned_count": len(task_items),
             }
         )
         start_event.wait()
 
-        rows: List[ResultRow] = []
-        for task in task_items:
+        init_worker_output(worker_out_csv)
+        while True:
+            task = task_queue.get()
+            if task is None:
+                break
+
             try:
                 row = evaluate_one_dataset(
                     clf=clf,
@@ -511,7 +519,7 @@ def run_worker(
                     error=f"{type(exc).__name__}: {exc}",
                 )
 
-            rows.append(row)
+            append_worker_row(worker_out_csv, row)
 
             if verbose:
                 if row.status == "ok":
@@ -526,9 +534,6 @@ def run_worker(
                         f"{task.benchmark}/{task.dataset_name} error={row.error}"
                     )
             clear_torch_cache()
-
-        worker_df = pd.DataFrame([asdict(row) for row in rows]) if rows else pd.DataFrame(columns=list(ResultRow.__annotations__.keys()))
-        worker_df.to_csv(worker_out_csv, index=False)
     except Exception:
         try:
             ready_queue.put(
@@ -574,6 +579,56 @@ def collect_worker_outputs(out_dir: Path, workers: int) -> List[pd.DataFrame]:
             except pd.errors.EmptyDataError:
                 continue
     return dfs
+
+
+def build_task_table(
+    runnable_tasks: List[DatasetTask],
+    skipped_tasks: List[DatasetTask],
+    result_df: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
+    rows: List[dict] = []
+
+    for task in runnable_tasks:
+        rows.append(
+            {
+                "benchmark": task.benchmark,
+                "dataset_id": task.dataset_id,
+                "dataset_dir": task.dataset_dir,
+                "dataset_name": task.dataset_name,
+                "single_csv": task.single_csv,
+                "train_csv": task.train_csv,
+                "test_csv": task.test_csv,
+                "task_status": "pending",
+            }
+        )
+
+    for task in skipped_tasks:
+        rows.append(
+            {
+                "benchmark": task.benchmark,
+                "dataset_id": task.dataset_id,
+                "dataset_dir": task.dataset_dir,
+                "dataset_name": task.dataset_name,
+                "single_csv": task.single_csv,
+                "train_csv": task.train_csv,
+                "test_csv": task.test_csv,
+                "task_status": "skipped",
+            }
+        )
+
+    task_df = pd.DataFrame(rows)
+    if result_df is None or task_df.empty or result_df.empty:
+        return task_df
+
+    merged = task_df.merge(
+        result_df,
+        how="left",
+        on=["benchmark", "dataset_id", "dataset_dir", "dataset_name"],
+        suffixes=("", "_result"),
+    )
+    has_result = merged["status"].notna()
+    merged.loc[has_result, "task_status"] = merged.loc[has_result, "status"]
+    return merged
 
 
 def write_summary(
@@ -659,16 +714,24 @@ def main() -> None:
     if args.limit_datasets > 0:
         tasks = tasks[:args.limit_datasets]
 
+    task_table_path = out_dir / "task_table.csv"
+    build_task_table(tasks, skipped_datasets).to_csv(task_table_path, index=False)
+
     gpus = parse_gpu_list(args.gpus)
     workers = min(args.workers, len(gpus)) if gpus else 0
     if workers <= 0:
         raise ValueError("No GPU workers available. Check --workers and --gpus.")
 
+    task_queue = mp.Queue()
     ready_queue = mp.Queue()
     start_event = mp.Event()
     processes: List[mp.Process] = []
 
-    worker_assignments = [shard_items(tasks, workers, worker_id) for worker_id in range(workers)]
+    for task in tasks:
+        task_queue.put(task)
+    for _ in range(workers):
+        task_queue.put(None)
+
     start_time = time.time()
 
     for worker_id in range(workers):
@@ -677,7 +740,7 @@ def main() -> None:
             kwargs={
                 "worker_id": worker_id,
                 "gpu_id": gpus[worker_id],
-                "task_items": worker_assignments[worker_id],
+                "task_queue": task_queue,
                 "ready_queue": ready_queue,
                 "start_event": start_event,
                 "worker_out_csv": str(out_dir / f"worker_{worker_id}.csv"),
@@ -709,6 +772,7 @@ def main() -> None:
     worker_dfs = collect_worker_outputs(out_dir, workers)
     result_df = pd.concat(worker_dfs, ignore_index=True) if worker_dfs else pd.DataFrame(columns=list(ResultRow.__annotations__.keys()))
     result_df.to_csv(out_dir / "all_results.csv", index=False)
+    build_task_table(tasks, skipped_datasets, result_df=result_df).to_csv(task_table_path, index=False)
 
     wall_seconds = time.time() - start_time
     write_summary(
@@ -731,7 +795,7 @@ def main() -> None:
         "test_size": args.test_size,
         "random_state": args.random_state,
         "skip_dataset_names_requested": sorted(skip_dataset_names),
-        "skipped_datasets": skipped_datasets,
+        "skipped_datasets": [f"{task.benchmark}/{task.dataset_name}" for task in skipped_datasets],
         "discovered_per_benchmark": discovered,
         "discovered_total": discovered_total,
         "processed_total": len(tasks),

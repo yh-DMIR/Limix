@@ -16,10 +16,10 @@ unset GPU_DEVICE_ORDINAL
 PYTHON=${PYTHON:-python}
 SCRIPT=${SCRIPT:-benchmark_limix_classification_amd_skip_csv.py}
 ROOT=${ROOT:-.}
-BENCHMARKS=${BENCHMARKS:-openml_cc18_csv=dataset/openml_cc18_72}
+BENCHMARKS=${BENCHMARKS:-openml_cc18_csv=dataset/openml_cc18_72,tabarena_cls=dataset/tabarena/cls,tabzilla_csv=dataset/tabzilla35,talent_cls=dataset/talent_cls}
 MODEL_PATH=${MODEL_PATH:-ckpt/LimiX-16M.ckpt}
 CONFIG_PATH=${CONFIG_PATH:-}
-OUT_DIR=${OUT_DIR:-result/LimiX_official_classification_amd_skip_openml}
+OUT_DIR=${OUT_DIR:-result/LimiX_official_classification_amd_skip_all}
 WORKERS=${WORKERS:-8}
 GPUS=${GPUS:-0,1,2,3,4,5,6,7}
 SKIP_DATASET_NAMES=${SKIP_DATASET_NAMES:-}
