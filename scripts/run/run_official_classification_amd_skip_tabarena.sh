@@ -20,8 +20,8 @@ BENCHMARKS=${BENCHMARKS:-tabarena_cls=dataset/tabarena/cls}
 MODEL_PATH=${MODEL_PATH:-ckpt/LimiX-16M.ckpt}
 CONFIG_PATH=${CONFIG_PATH:-}
 OUT_DIR=${OUT_DIR:-result/LimiX_official_classification_amd_skip_tabarena}
-WORKERS=${WORKERS:-1}
-GPUS=${GPUS:-1}
+WORKERS=${WORKERS:-8}
+GPUS=${GPUS:-0,1,2,3,4,5,6,7}
 SKIP_DATASET_NAMES=${SKIP_DATASET_NAMES:-}
 SKIP_DATASET_NAMES_FILE=${SKIP_DATASET_NAMES_FILE:-}
 
