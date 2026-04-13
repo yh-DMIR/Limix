@@ -1,0 +1,31 @@
+{
+  "root": "/vast/users/guangyi.chen/causal_group/zijian.li/dmir_crl/lyh/Limix",
+  "benchmarks": [
+    "tabarena_cls=dataset/tabarena/cls"
+  ],
+  "model_path": "/vast/users/guangyi.chen/causal_group/zijian.li/dmir_crl/lyh/Limix/ckpt/LimiX-16M.ckpt",
+  "config_path": "/vast/users/guangyi.chen/causal_group/zijian.li/dmir_crl/lyh/Limix/config/cls_default_16M_retrieval.json",
+  "model_repo_id": null,
+  "model_filename": null,
+  "workers": 8,
+  "gpus": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "test_size": 0.2,
+  "random_state": 42,
+  "skip_dataset_names_requested": [],
+  "skipped_datasets": [],
+  "discovered_per_benchmark": {
+    "tabarena_cls": 38
+  },
+  "discovered_total": 38,
+  "processed_total": 38,
+  "wall_seconds": 709.6379632949829
+}

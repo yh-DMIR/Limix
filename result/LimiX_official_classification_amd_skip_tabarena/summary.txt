@@ -1,0 +1,10 @@
+discovered_datasets: 38
+skipped_datasets: 0
+processed_datasets: 38
+ok_count: 34
+fail_count: 4
+wall_seconds: 709.638
+mean_accuracy: 0.854896
+mean_f1_macro: 0.703033
+mean_logloss: 0.331998
+mean_auc_ovo: 0.844962
