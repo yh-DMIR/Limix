@@ -319,9 +319,9 @@ def predict_proba_full_context(
 
     X_train_np = X_train.to_numpy()
     X_test_np = X_test.to_numpy()
-    y_train_np = y_train.to_numpy()
+    y_train_encoded = metric_encoder.transform(y_train.to_numpy()).astype(np.int64, copy=False)
 
-    shard_output = clf.predict(X_train_np, y_train_np, X_test_np, task_type="Classification")
+    shard_output = clf.predict(X_train_np, y_train_encoded, X_test_np, task_type="Classification")
     shard_output = np.asarray(shard_output, dtype=np.float32)
 
     if shard_output.ndim != 2 or shard_output.shape[0] != len(X_test_np):
@@ -330,13 +330,14 @@ def predict_proba_full_context(
             f"{shard_output.shape}, expected ({len(X_test_np)}, n_classes)"
         )
 
-    model_classes = np.asarray(clf.classes)
+    model_classes = np.asarray(clf.classes, dtype=np.int64)
     if model_classes.ndim != 1:
         raise ValueError(f"Unexpected classes shape: {model_classes.shape}")
+    if np.any(model_classes < 0) or np.any(model_classes >= n_classes):
+        raise ValueError(f"Predicted classes out of range: {model_classes}")
 
-    class_indices = metric_encoder.transform(model_classes)
     batch_scores = np.zeros((len(X_test_np), n_classes), dtype=np.float32)
-    batch_scores[:, class_indices] = shard_output
+    batch_scores[:, model_classes] = shard_output
 
     row_sums = batch_scores.sum(axis=1, keepdims=True)
     zero_rows = np.isclose(row_sums.squeeze(-1), 0.0)
