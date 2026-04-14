@@ -12,9 +12,17 @@ from utils.data_utils import TabularInferenceDataset, cluster_test_data, fix_dat
 from utils.inference_utils import NonPaddingDistributedSampler, swap_rows_back
 from utils.loading import load_model
 
-from utils.retrieval_utils import RelabelRetrievalY, find_top_K_indice
+from utils.retrieval_utils import RelabelRetrievalY, find_top_K_indice, topk_tail_indices
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
+
+
+def _get_env_int(name: str, default: int | None = None) -> int | None:
+    raw_value = os.getenv(name)
+    if raw_value is None or str(raw_value).strip() == "":
+        return default
+    value = int(raw_value)
+    return value if value > 0 else default
 
 
 def _infer_max_local_classes(model: torch.nn.Module | None) -> int | None:
@@ -176,8 +184,11 @@ class InferenceResultWithRetrieval:
                                                   retrieval_len=self.retrieval_len)
             else:
                 # use retrieval len
-                top_k_indices = torch.argsort(attention_score)[:, -min(self.retrieval_len, X_train.shape[0]):].to(
-                    "cuda")
+                top_k_indices = topk_tail_indices(
+                    attention_score,
+                    min(self.retrieval_len, X_train.shape[0]),
+                    dim=1,
+                ).to("cuda")
 
             cluster_num = min(cluster_num, len(top_k_indices))
             cluster_train_sample_indices, cluster_test_sample_indices = cluster_test_data(top_k_indices,
@@ -190,9 +201,7 @@ class InferenceResultWithRetrieval:
             model = self.model.to(device)
             outputs = []
             total_indice = []
-            for cluster_indices in cluster_test_sample_indices.values():
-                for indices in cluster_indices:
-                    total_indice.append(indices)
+            cluster_test_batch_rows = _get_env_int("LIMIX_CLUSTER_TEST_BATCH_ROWS")
             show_tqdm=False
             for inference_idx in tqdm(range(len(cluster_test_sample_indices)), desc=f"inference",
                                       bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [耗时:{elapsed}]",
@@ -203,29 +212,43 @@ class InferenceResultWithRetrieval:
                     X_train_, y_ = _limit_classes_by_frequency(X_train_, y_, max_local_classes)
                 y_ = y_.to(device).unsqueeze(0)
                 X_test_ = X_test[inference_idx]
-                x_ = torch.cat([X_train_, X_test_], dim=0).to(device).unsqueeze(0)
+                cluster_indices = cluster_test_sample_indices[inference_idx]
                 if task_type == "cls":
                     relabel = RelabelRetrievalY(y_.unsqueeze(-1))
-                    y_ = relabel.transform_y().squeeze(-1).to(device)
-                with (
-                    torch.autocast(device.type if isinstance(device, torch.device) else device, enabled=True),
-                    torch.inference_mode(),
-                ):
-                    output = model(x=x_, y=y_, eval_pos=y_.shape[1],
-                                   task_type=task_type)
-                if len(output.shape) == 3:
-                    output = output.view(-1, output.shape[-1])
-                if task_type == "cls":
-                    output = output.cpu().numpy()
-                    output = torch.cat(
-                        [torch.from_numpy(
-                            relabel.inverse_transform_y(
-                                np.expand_dims(i, axis=0),
-                                num_classes=output_num_classes,
-                            )
-                        ) for i in
-                         output], dim=0)
-                outputs.append(output)
+                    y_input = relabel.transform_y().squeeze(-1).to(device)
+                else:
+                    relabel = None
+                    y_input = y_
+                if cluster_test_batch_rows is None:
+                    batch_slices = [slice(0, X_test_.shape[0])]
+                else:
+                    batch_slices = [
+                        slice(start, min(start + cluster_test_batch_rows, X_test_.shape[0]))
+                        for start in range(0, X_test_.shape[0], cluster_test_batch_rows)
+                    ]
+                for batch_slice in batch_slices:
+                    x_ = torch.cat([X_train_, X_test_[batch_slice]], dim=0).to(device).unsqueeze(0)
+                    with (
+                        torch.autocast(device.type if isinstance(device, torch.device) else device, enabled=True),
+                        torch.inference_mode(),
+                    ):
+                        output = model(x=x_, y=y_input, eval_pos=y_input.shape[1],
+                                       task_type=task_type)
+                    if len(output.shape) == 3:
+                        output = output.view(-1, output.shape[-1])
+                    if task_type == "cls":
+                        output = output.cpu().numpy()
+                        output = torch.cat(
+                            [torch.from_numpy(
+                                relabel.inverse_transform_y(
+                                    np.expand_dims(i, axis=0),
+                                    num_classes=output_num_classes,
+                                )
+                            ) for i in output],
+                            dim=0,
+                        )
+                    outputs.append(output)
+                    total_indice.extend(cluster_indices[batch_slice].tolist())
             outputs = torch.cat(outputs, dim=0)
             outputs = swap_rows_back(outputs, total_indice)
             return outputs
@@ -238,9 +261,11 @@ class InferenceResultWithRetrieval:
             model = DDP(model, device_ids=[self.rank], find_unused_parameters=False)
             sampler = NonPaddingDistributedSampler(dataset, num_replicas=self.world_size, rank=self.rank, shuffle=False)
             outputs = []
+            retrieval_batch_size = _get_env_int("LIMIX_RETRIEVAL_BATCH_SIZE")
+            default_batch_size = min(max(1, 000, 000 // self.retrieval_len // X_train.shape[1], 1),
+                                     8) if self.sample_selection_type == "AM" else 1024
             dataloader = DataLoader(dataset,
-                                    batch_size=min(max(1, 000, 000 // self.retrieval_len // X_train.shape[1], 1),
-                                                   8) if self.sample_selection_type == "AM" else 1024,
+                                    batch_size=retrieval_batch_size or default_batch_size,
                                     shuffle=False,
                                     drop_last=False,
                                     sampler=sampler
@@ -346,17 +371,39 @@ class InferenceAttentionMap:
         X_train = fix_data_shape(X_train, data_type="feature")
         X_test = fix_data_shape(X_test, data_type="feature")
         y_train = fix_data_shape(y_train, data_type="label")
-        with(torch.autocast(device.type if isinstance(device, torch.device) else device, enabled=True), torch.inference_mode()):
-            x_ = torch.cat([X_train, X_test], dim=1).to(device)
-            y_ = y_train.to(device)
-
-            output, feature_attention, sample_attention = model(x=x_, y=y_, eval_pos=y_.shape[1],
-                                                                task_type=task_type,
-                                                                calculate_feature_attention=self.calculate_feature_attention,
-                                                                calculate_sample_attention=self.calculate_sample_attention)
+        y_ = y_train.to(device)
+        attention_test_batch_rows = _get_env_int("LIMIX_ATTENTION_TEST_BATCH_ROWS")
+        feature_attention_chunks = []
+        sample_attention_chunks = []
+        if attention_test_batch_rows is None:
+            batch_slices = [slice(0, X_test.shape[1])]
+        else:
+            batch_slices = [
+                slice(start, min(start + attention_test_batch_rows, X_test.shape[1]))
+                for start in range(0, X_test.shape[1], attention_test_batch_rows)
+            ]
+        for batch_slice in batch_slices:
+            with (
+                torch.autocast(device.type if isinstance(device, torch.device) else device, enabled=True),
+                torch.inference_mode(),
+            ):
+                x_ = torch.cat([X_train, X_test[:, batch_slice]], dim=1).to(device)
+                _, feature_attention, sample_attention = model(
+                    x=x_,
+                    y=y_,
+                    eval_pos=y_.shape[1],
+                    task_type=task_type,
+                    calculate_feature_attention=self.calculate_feature_attention,
+                    calculate_sample_attention=self.calculate_sample_attention,
+                )
+            if feature_attention is not None:
+                feature_attention_chunks.append(feature_attention[y_.shape[1]:].cpu())
+            if sample_attention is not None:
+                sample_attention_chunks.append(sample_attention.cpu())
             gc.collect()
             torch.cuda.empty_cache()
 
         torch.cuda.empty_cache()
-        return feature_attention[y_.shape[
-                                     1]:] if feature_attention is not None else None, sample_attention if sample_attention is not None else None
+        feature_attention = torch.cat(feature_attention_chunks, dim=0) if feature_attention_chunks else None
+        sample_attention = torch.cat(sample_attention_chunks, dim=1) if sample_attention_chunks else None
+        return feature_attention, sample_attention

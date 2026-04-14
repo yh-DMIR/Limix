@@ -3,6 +3,29 @@ import torch
 from sklearn.preprocessing import LabelEncoder
 
 
+def topk_tail_indices(input_tensor: torch.Tensor, k: int, dim: int = -1) -> torch.Tensor:
+    """
+    Return the same slice shape/order as ``torch.argsort(input_tensor, dim=dim)[..., -k:]``
+    without sorting the full dimension.
+
+    ``torch.topk(..., largest=True, sorted=True)`` returns indices ordered by value from
+    largest to smallest. Flipping that result restores the ascending-by-value order that
+    the original ``argsort(...)[..., -k:]`` produced for the selected tail.
+    """
+    if not isinstance(input_tensor, torch.Tensor):
+        raise TypeError(f"input_tensor must be a torch.Tensor, got {type(input_tensor)}")
+
+    dim_size = input_tensor.shape[dim]
+    k = min(max(int(k), 0), dim_size)
+    if k == 0:
+        output_shape = list(input_tensor.shape)
+        output_shape[dim] = 0
+        return torch.empty(*output_shape, dtype=torch.int64, device=input_tensor.device)
+
+    _, indices = torch.topk(input_tensor, k=k, dim=dim, largest=True, sorted=True)
+    return torch.flip(indices, dims=[dim])
+
+
 class RelabelRetrievalY:
     def __init__(self, y_train: torch.Tensor):
         """

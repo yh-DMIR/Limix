@@ -21,6 +21,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.decomposition import TruncatedSVD
 from sklearn.utils.validation import check_is_fitted
 from utils.data_utils import TabularInferenceDataset
+from utils.retrieval_utils import topk_tail_indices
 from torch.cuda import OutOfMemoryError
 
 import hashlib
@@ -706,7 +707,11 @@ class SubSampleData():
         else:
             y_feature_attention_score = torch.mean(feature_attention_score[:, -1, :].squeeze(),dim=0)  # shape [test_sample_lens,features]
             if subsample_idx is None:
-                self.subsample_idx = torch.argsort(y_feature_attention_score)[-min(self.subsample_num, x.shape[0]):]
+                self.subsample_idx = topk_tail_indices(
+                    y_feature_attention_score,
+                    min(self.subsample_num, x.shape[0]),
+                    dim=0,
+                )
             else:
                 self.subsample_idx = subsample_idx
             self.X_train = x

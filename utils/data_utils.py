@@ -9,6 +9,8 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from typing import List, Literal
 
+from utils.retrieval_utils import find_top_K_indice, topk_tail_indices
+
 
 class TabularInferenceDataset(Dataset):
     """
@@ -131,7 +133,7 @@ class TabularInferenceDataset(Dataset):
                     self.y_train = torch.cat([y_train[x_iter].unsqueeze(0) for x_iter in cluster_train_sample_indices.values()],dim=0)
                     self.X_test = torch.cat([X_test[x_iter].unsqueeze(0) for x_iter in cluster_test_sample_indices.values()],dim=0)
                 else:
-                    top_k_indices = torch.argsort(attention_score)[:, -min(train_len, X_train.shape[0]):]
+                    top_k_indices = topk_tail_indices(attention_score, min(train_len, X_train.shape[0]), dim=1)
                     cluster_num = min(cluster_num, len(top_k_indices))
                     cluster_train_sample_indices, cluster_test_sample_indices = cluster_test_data(top_k_indices,
                                                                                                   cluster_num)
@@ -142,7 +144,7 @@ class TabularInferenceDataset(Dataset):
                 if use_threshold:
                     top_k_indices = find_top_K_indice(attention_score, threshold=threshold, mixed_method=mixed_method,retrieval_len=train_len)
                 else:
-                    top_k_indices = torch.argsort(attention_score)[:, -min(train_len, X_train.shape[0]):]
+                    top_k_indices = topk_tail_indices(attention_score, min(train_len, X_train.shape[0]), dim=1)
                 self.X_train = torch.cat([X_train[x_iter].unsqueeze(0) for x_iter in top_k_indices], dim=0)
                 self.y_train = torch.cat([y_train[y_iter].unsqueeze(0) for y_iter in top_k_indices], dim=0).unsqueeze(-1)
                 self.X_test = X_test
@@ -426,4 +428,3 @@ def load_data(data_root,folder):
     return trainX, trainy, testX, testy
 if __name__ == '__main__':
     pass
-

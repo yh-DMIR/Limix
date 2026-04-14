@@ -73,6 +73,64 @@ def clear_torch_cache() -> None:
         pass
 
 
+OOM_ERROR_MARKERS = (
+    "out of memory",
+    "cuda out of memory",
+    "hip out of memory",
+    "hiperroroutofmemory",
+    "memory access fault",
+    "cublas_status_alloc_failed",
+)
+OOM_BATCH_ENV_KEYS = (
+    "LIMIX_ATTENTION_TEST_BATCH_ROWS",
+    "LIMIX_CLUSTER_TEST_BATCH_ROWS",
+    "LIMIX_RETRIEVAL_BATCH_SIZE",
+)
+OOM_RETRY_BATCH_OVERRIDES = [
+    {
+        "LIMIX_ATTENTION_TEST_BATCH_ROWS": "256",
+        "LIMIX_CLUSTER_TEST_BATCH_ROWS": "256",
+        "LIMIX_RETRIEVAL_BATCH_SIZE": "8",
+    },
+    {
+        "LIMIX_ATTENTION_TEST_BATCH_ROWS": "128",
+        "LIMIX_CLUSTER_TEST_BATCH_ROWS": "128",
+        "LIMIX_RETRIEVAL_BATCH_SIZE": "4",
+    },
+    {
+        "LIMIX_ATTENTION_TEST_BATCH_ROWS": "64",
+        "LIMIX_CLUSTER_TEST_BATCH_ROWS": "64",
+        "LIMIX_RETRIEVAL_BATCH_SIZE": "2",
+    },
+    {
+        "LIMIX_ATTENTION_TEST_BATCH_ROWS": "32",
+        "LIMIX_CLUSTER_TEST_BATCH_ROWS": "32",
+        "LIMIX_RETRIEVAL_BATCH_SIZE": "1",
+    },
+]
+
+
+def is_oom_error(exc: Exception) -> bool:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(marker in text for marker in OOM_ERROR_MARKERS)
+
+
+def apply_oom_batch_overrides(overrides: Dict[str, str]) -> None:
+    for key in OOM_BATCH_ENV_KEYS:
+        os.environ.pop(key, None)
+    for key, value in overrides.items():
+        os.environ[key] = value
+
+
+def clear_oom_batch_overrides() -> None:
+    for key in OOM_BATCH_ENV_KEYS:
+        os.environ.pop(key, None)
+
+
+def format_oom_batch_overrides(overrides: Dict[str, str]) -> str:
+    return ", ".join(f"{key}={value}" for key, value in overrides.items())
+
+
 def sanitize_dataset_id(value: str) -> str:
     match = re.search(r"(OpenML-ID-\d+)", value)
     return match.group(1) if match else Path(value).stem
@@ -417,6 +475,15 @@ def resolve_model_path(
     requested_path.parent.mkdir(parents=True, exist_ok=True)
     downloaded_path = download_model(repo_id=repo_id, filename=target_filename, save_path=str(requested_path.parent))
     return Path(downloaded_path).resolve()
+
+
+def build_predictor(LimiXPredictor, torch, model_path: str, config_path: str):
+    return LimiXPredictor(
+        device=torch.device("cuda:0"),
+        model_path=model_path,
+        inference_config=config_path,
+        inference_with_DDP=False,
+    )
 
 
 def init_worker_output(worker_out_csv: str) -> None:
