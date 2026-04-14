@@ -1,0 +1,55 @@
+{
+  "root": "/vast/users/guangyi.chen/causal_group/zijian.li/dmir_crl/lyh/Limix",
+  "benchmarks": [
+    "openml_cc18_csv=dataset/openml_cc18_72",
+    "tabarena_cls=dataset/tabarena/cls",
+    "tabzilla_csv=dataset/tabzilla35",
+    "talent_cls=dataset/talent_cls"
+  ],
+  "model_path": "/vast/users/guangyi.chen/causal_group/zijian.li/dmir_crl/lyh/Limix/ckpt/LimiX-16M.ckpt",
+  "config_path": "/vast/users/guangyi.chen/causal_group/zijian.li/dmir_crl/lyh/Limix/config/cls_default_16M_retrieval.json",
+  "model_repo_id": null,
+  "model_filename": null,
+  "workers": 8,
+  "gpus": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "test_size": 0.2,
+  "random_state": 42,
+  "skip_dataset_names_requested": [
+    "openml-id-1169",
+    "openml-id-1567",
+    "openml-id-40923",
+    "openml-id-40927",
+    "openml-id-40996",
+    "openml-id-41147",
+    "openml-id-41159",
+    "openml-id-554"
+  ],
+  "skipped_datasets": [
+    "openml_cc18_csv/OpenML-ID-40923",
+    "openml_cc18_csv/OpenML-ID-40927",
+    "openml_cc18_csv/OpenML-ID-40996",
+    "openml_cc18_csv/OpenML-ID-554",
+    "tabzilla_csv/OpenML-ID-1169",
+    "tabzilla_csv/OpenML-ID-1567",
+    "tabzilla_csv/OpenML-ID-41147",
+    "tabzilla_csv/OpenML-ID-41159"
+  ],
+  "discovered_per_benchmark": {
+    "openml_cc18_csv": 72,
+    "tabarena_cls": 38,
+    "tabzilla_csv": 35,
+    "talent_cls": 200
+  },
+  "discovered_total": 345,
+  "processed_total": 337,
+  "wall_seconds": 1464.333519935608
+}
