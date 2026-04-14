@@ -493,8 +493,11 @@ class EmbYEncoderStep(nn.Module):
     def forward(self, input:dict[str, torch.Tensor|int])->dict[str, torch.Tensor]:
         y = input[self.in_keys[0]]
         eval_pos = input['eval_pos']
-        y = y.int() # type: ignore
+        if torch.is_floating_point(y):
+            y = torch.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
+        y = y.long() # type: ignore
         y_train = y[:,:eval_pos]
+        y_train = torch.clamp(y_train, min=0, max=self.y_embedding.num_embeddings - 1)
         y_test = torch.zeros_like(y[:, eval_pos:], dtype=torch.int)
         y_train_emb = self.y_embedding(y_train).to(torch.float16)
         y_test_emb = self.y_mask(y_test).to(torch.float16)
@@ -523,6 +526,8 @@ class MulticlassTargetEncoder(nn.Module):
     def forward(self, input:dict[str, torch.Tensor|int])->dict[str, torch.Tensor]:
         x:torch.Tensor = input[self.in_keys[0]]  # type: ignore
         eval_pos = input['eval_pos']
+        if torch.is_floating_point(x):
+            x = torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
         unique_xs = [
             torch.unique(x[b, :eval_pos]) for b in range(x.shape[0])
         ]

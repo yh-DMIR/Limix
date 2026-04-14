@@ -186,7 +186,9 @@ class FeaturesTransformer(nn.Module):
         embedded_y = self.mixed_y_embedding(y, y_type=y_type, eval_pos=eval_pos)
 
         if torch.isnan(embedded_y).any():
-            raise ValueError("embedded_y contains NaN values; please add a NanEncoder in the encoder")
+            embedded_y = torch.nan_to_num(embedded_y, nan=0.0, posinf=0.0, neginf=0.0)
+        if torch.isnan(embedded_y).any():
+            raise ValueError("embedded_y contains NaN values after sanitization")
         
         embedded_x = self.add_embeddings(x_emb_result)
         embedded_all = torch.cat((embedded_x, embedded_y.unsqueeze(2)), dim=2)

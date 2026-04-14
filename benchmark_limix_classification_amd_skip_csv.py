@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, f1_score, log_loss, roc_auc_score
+from sklearn.metrics import accuracy_score, f1_score, log_loss
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
@@ -55,7 +55,6 @@ class ResultRow:
     accuracy: Optional[float]
     f1_macro: Optional[float]
     logloss: Optional[float]
-    auc_ovo: Optional[float]
     predict_seconds: float
     status: str
     error: Optional[str]
@@ -293,17 +292,6 @@ def load_dataset(
     return X_train, y_train, X_test, y_test
 
 
-def safe_auc_score(y_true: np.ndarray, y_prob: np.ndarray) -> Optional[float]:
-    try:
-        if y_prob.shape[1] <= 1:
-            return None
-        if len(np.unique(y_true)) > 2:
-            return float(roc_auc_score(y_true, y_prob, multi_class="ovo", labels=np.arange(y_prob.shape[1])))
-        return float(roc_auc_score(y_true, y_prob[:, 1] if y_prob.shape[1] > 1 else y_prob[:, 0]))
-    except Exception:
-        return None
-
-
 def predict_proba_full_context(
     clf,
     X_train: pd.DataFrame,
@@ -373,8 +361,6 @@ def evaluate_one_dataset(
 
     y_pred = np.argmax(y_prob, axis=1)
     ll = float(log_loss(y_test_encoded, y_prob, labels=np.arange(y_prob.shape[1])))
-    auc_ovo = safe_auc_score(y_test_encoded, y_prob)
-
     return ResultRow(
         benchmark=task.benchmark,
         dataset_id=task.dataset_id,
@@ -387,7 +373,6 @@ def evaluate_one_dataset(
         accuracy=float(accuracy_score(y_test_encoded, y_pred)),
         f1_macro=float(f1_score(y_test_encoded, y_pred, average="macro")),
         logloss=ll,
-        auc_ovo=auc_ovo,
         predict_seconds=float(predict_seconds),
         status="ok",
         error=None,
@@ -513,7 +498,6 @@ def run_worker(
                     accuracy=None,
                     f1_macro=None,
                     logloss=None,
-                    auc_ovo=None,
                     predict_seconds=0.0,
                     status="fail",
                     error=f"{type(exc).__name__}: {exc}",
@@ -560,7 +544,6 @@ def run_worker(
                     "accuracy": None,
                     "f1_macro": None,
                     "logloss": None,
-                    "auc_ovo": None,
                     "predict_seconds": 0.0,
                     "status": "fail",
                     "error": traceback.format_exc(),
@@ -579,6 +562,60 @@ def collect_worker_outputs(out_dir: Path, workers: int) -> List[pd.DataFrame]:
             except pd.errors.EmptyDataError:
                 continue
     return dfs
+
+
+def task_identity(task: DatasetTask) -> tuple[str, str, str, str]:
+    return (task.benchmark, task.dataset_id, task.dataset_dir, task.dataset_name)
+
+
+def result_identity(row: pd.Series) -> tuple[str, str, str, str]:
+    return (
+        str(row["benchmark"]),
+        str(row["dataset_id"]),
+        str(row["dataset_dir"]),
+        str(row["dataset_name"]),
+    )
+
+
+def build_missing_result_rows(
+    tasks: List[DatasetTask],
+    result_df: pd.DataFrame,
+    worker_exitcodes: List[int],
+) -> pd.DataFrame:
+    if result_df.empty:
+        existing_keys: set[tuple[str, str, str, str]] = set()
+    else:
+        existing_keys = {result_identity(row) for _, row in result_df.iterrows()}
+
+    missing_rows = []
+    exitcode_text = ",".join(str(code) for code in worker_exitcodes)
+    error_message = (
+        "Missing worker result: task was discovered but no worker wrote a result row. "
+        f"worker_exitcodes={exitcode_text}"
+    )
+    for task in tasks:
+        if task_identity(task) in existing_keys:
+            continue
+        missing_rows.append(
+            {
+                "benchmark": task.benchmark,
+                "dataset_id": task.dataset_id,
+                "dataset_dir": task.dataset_dir,
+                "dataset_name": task.dataset_name,
+                "n_train": 0,
+                "n_test": 0,
+                "n_features": 0,
+                "n_classes": None,
+                "accuracy": None,
+                "f1_macro": None,
+                "logloss": None,
+                "predict_seconds": 0.0,
+                "status": "fail",
+                "error": error_message,
+            }
+        )
+
+    return pd.DataFrame(missing_rows, columns=list(ResultRow.__annotations__.keys()))
 
 
 def build_task_table(
@@ -656,7 +693,6 @@ def write_summary(
                 f"mean_accuracy: {ok_df['accuracy'].mean():.6f}",
                 f"mean_f1_macro: {ok_df['f1_macro'].mean():.6f}",
                 f"mean_logloss: {ok_df['logloss'].mean():.6f}",
-                f"mean_auc_ovo: {ok_df['auc_ovo'].dropna().mean():.6f}" if ok_df["auc_ovo"].notna().any() else "mean_auc_ovo: NaN",
             ]
         )
 
@@ -769,8 +805,13 @@ def main() -> None:
     for process in processes:
         process.join()
 
+    worker_exitcodes = [int(process.exitcode) if process.exitcode is not None else -999 for process in processes]
+
     worker_dfs = collect_worker_outputs(out_dir, workers)
     result_df = pd.concat(worker_dfs, ignore_index=True) if worker_dfs else pd.DataFrame(columns=list(ResultRow.__annotations__.keys()))
+    missing_result_df = build_missing_result_rows(tasks, result_df, worker_exitcodes)
+    if not missing_result_df.empty:
+        result_df = pd.concat([result_df, missing_result_df], ignore_index=True)
     result_df.to_csv(out_dir / "all_results.csv", index=False)
     build_task_table(tasks, skipped_datasets, result_df=result_df).to_csv(task_table_path, index=False)
 
@@ -792,6 +833,7 @@ def main() -> None:
         "model_filename": args.model_filename,
         "workers": workers,
         "gpus": gpus[:workers],
+        "worker_exitcodes": worker_exitcodes,
         "test_size": args.test_size,
         "random_state": args.random_state,
         "skip_dataset_names_requested": sorted(skip_dataset_names),
@@ -799,6 +841,7 @@ def main() -> None:
         "discovered_per_benchmark": discovered,
         "discovered_total": discovered_total,
         "processed_total": len(tasks),
+        "missing_result_count": int(len(missing_result_df)),
         "wall_seconds": wall_seconds,
     }
     (out_dir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")

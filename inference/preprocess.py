@@ -532,19 +532,19 @@ class RebalanceFeatureDistribution(BasePreprocess):
                                         ])
                 # trans_ixs = cont_ix
             elif worker_tag == "quantile_uniform_10":
-                sworker = QuantileTransformer(
+                sworker = QTx(
                     output_distribution="uniform",
                     n_quantiles=max(n_samples // 10, 2),
                     random_state=static_seed,
                 )
             elif worker_tag == "quantile_uniform_5":
-                sworker = QuantileTransformer(
+                sworker = QTx(
                     output_distribution="uniform",
                     n_quantiles=max(n_samples // 5, 2),
                     random_state=static_seed,
                 )
             elif worker_tag == "quantile_uniform_all_data":
-                sworker = QuantileTransformer(
+                sworker = QTx(
                     output_distribution="uniform",
                     n_quantiles=max(n_samples // 5, 2),
                     random_state=static_seed,
@@ -592,7 +592,7 @@ class RebalanceFeatureDistribution(BasePreprocess):
                     random_state=static_seed,
                 )
             elif worker_tag == "quantile_norm_all_data":
-                sworker = QuantileTransformer(
+                sworker = QTx(
                     output_distribution="normal",
                     n_quantiles=max(n_samples // 5, 2),
                     random_state=static_seed,
