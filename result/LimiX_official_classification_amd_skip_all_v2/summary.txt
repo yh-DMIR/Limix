@@ -1,0 +1,9 @@
+discovered_datasets: 345
+skipped_datasets: 8
+processed_datasets: 337
+ok_count: 325
+fail_count: 12
+wall_seconds: 1114.187
+mean_accuracy: 0.850935
+mean_f1_macro: 0.777291
+mean_logloss: 0.483785
